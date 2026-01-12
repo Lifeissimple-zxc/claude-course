@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Request Flow Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        h1 {
+            text-align: center;
+            padding: 20px;
+            font-weight: 300;
+            letter-spacing: 2px;
+            color: #a8dadc;
+        }
+
+        #visualization {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        svg {
+            display: block;
+            margin: 0 auto;
+        }
+
+        .layer-box {
+            stroke-width: 2;
+            rx: 10;
+            ry: 10;
+        }
+
+        .layer-label {
+            font-size: 14px;
+            font-weight: 600;
+            fill: #fff;
+        }
+
+        .layer-file {
+            font-size: 11px;
+            fill: #a8dadc;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+
+        .layer-desc {
+            font-size: 10px;
+            fill: #ccc;
+        }
+
+        .arrow-path {
+            fill: none;
+            stroke-width: 3;
+        }
+
+        .arrow-head {
+            fill: #4ecdc4;
+        }
+
+        .data-label {
+            font-size: 9px;
+            fill: #ffd93d;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+
+        .depth-indicator {
+            font-size: 12px;
+            font-weight: bold;
+            fill: #ff6b6b;
+        }
+
+        .legend {
+            font-size: 11px;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #4ecdc4;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            max-width: 300px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip code {
+            background: #2a2a4a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            color: #4ecdc4;
+        }
+
+        #controls {
+            text-align: center;
+            padding: 10px;
+        }
+
+        button {
+            background: #4ecdc4;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            color: #1a1a2e;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 0 5px;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        button:hover {
+            background: #45b7aa;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <h1>RAG System Request Flow</h1>
+    <div id="controls">
+        <button onclick="animateFlow()">▶ Animate Request</button>
+        <button onclick="resetAnimation()">↺ Reset</button>
+    </div>
+    <div id="visualization"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // Layer data
+        const layers = [
+            {
+                id: 'user',
+                label: 'User',
+                file: '',
+                desc: 'Types query & clicks Send',
+                color: '#6c5ce7',
+                depth: 0,
+                details: 'User interacts with the chat interface'
+            },
+            {
+                id: 'frontend',
+                label: 'Frontend',
+                file: 'script.js',
+                desc: 'sendMessage() → fetch("/api/query")',
+                color: '#00b894',
+                depth: 1,
+                details: 'Captures user input, sends POST request with query and session_id, displays response with markdown rendering'
+            },
+            {
+                id: 'fastapi',
+                label: 'FastAPI Server',
+                file: 'app.py',
+                desc: '@app.post("/api/query")',
+                color: '#0984e3',
+                depth: 2,
+                details: 'Receives HTTP request, validates with Pydantic models, routes to RAG system, returns JSON response'
+            },
+            {
+                id: 'rag',
+                label: 'RAG System',
+                file: 'rag_system.py',
+                desc: 'Orchestrates search + generation',
+                color: '#e17055',
+                depth: 3,
+                details: 'Coordinates all components: gets conversation history, calls AI generator with tools, extracts sources'
+            },
+            {
+                id: 'ai',
+                label: 'AI Generator',
+                file: 'ai_generator.py',
+                desc: 'Claude API client',
+                color: '#fdcb6e',
+                depth: 4,
+                details: 'Builds prompts with system message and history, calls Anthropic API, handles tool execution loop'
+            },
+            {
+                id: 'claude',
+                label: 'Claude API',
+                file: '(External)',
+                desc: 'LLM decides to use search tool',
+                color: '#d63031',
+                depth: 5,
+                details: 'Anthropic\'s Claude model analyzes query, decides to call search_course_content tool, returns tool_use response'
+            },
+            {
+                id: 'toolmgr',
+                label: 'Tool Manager',
+                file: 'search_tools.py',
+                desc: 'execute_tool()',
+                color: '#a29bfe',
+                depth: 6,
+                details: 'Routes tool calls to registered tools, collects results and sources'
+            },
+            {
+                id: 'searchtool',
+                label: 'CourseSearchTool',
+                file: 'search_tools.py',
+                desc: 'Formats search request',
+                color: '#74b9ff',
+                depth: 7,
+                details: 'Parses tool parameters (query, course_name, lesson_number), calls vector store, formats results'
+            },
+            {
+                id: 'vectorstore',
+                label: 'Vector Store',
+                file: 'vector_store.py',
+                desc: 'search() → ChromaDB',
+                color: '#55efc4',
+                depth: 8,
+                details: 'Resolves course names semantically, builds filters, performs vector similarity search'
+            },
+            {
+                id: 'chromadb',
+                label: 'ChromaDB',
+                file: './chroma_db/',
+                desc: 'Embeddings + Similarity Search',
+                color: '#ff7675',
+                depth: 9,
+                details: 'Stores vectors using SentenceTransformer embeddings (all-MiniLM-L6-v2), returns nearest neighbors by cosine similarity'
+            }
+        ];
+
+        // Data flow labels
+        const dataFlows = [
+            { from: 0, to: 1, label: 'click' },
+            { from: 1, to: 2, label: 'POST {query, session_id}' },
+            { from: 2, to: 3, label: 'query(query, session_id)' },
+            { from: 3, to: 4, label: 'generate_response(prompt, tools)' },
+            { from: 4, to: 5, label: 'messages.create()' },
+            { from: 5, to: 6, label: 'tool_use: search_course_content' },
+            { from: 6, to: 7, label: 'execute(query, filters)' },
+            { from: 7, to: 8, label: 'store.search(query)' },
+            { from: 8, to: 9, label: 'collection.query()' }
+        ];
+
+        // SVG dimensions
+        const width = 1200;
+        const height = 900;
+        const boxWidth = 200;
+        const boxHeight = 70;
+        const verticalGap = 85;
+        const startY = 40;
+
+        // Create SVG
+        const svg = d3.select('#visualization')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .attr('viewBox', `0 0 ${width} ${height}`);
+
+        // Add gradient definitions
+        const defs = svg.append('defs');
+
+        // Arrow marker
+        defs.append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 8)
+            .attr('refY', 0)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('d', 'M0,-5L10,0L0,5')
+            .attr('class', 'arrow-head');
+
+        // Return arrow marker
+        defs.append('marker')
+            .attr('id', 'arrowhead-return')
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 8)
+            .attr('refY', 0)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('d', 'M0,-5L10,0L0,5')
+            .attr('fill', '#ff6b6b');
+
+        // Glow filter
+        const filter = defs.append('filter')
+            .attr('id', 'glow')
+            .attr('x', '-50%')
+            .attr('y', '-50%')
+            .attr('width', '200%')
+            .attr('height', '200%');
+
+        filter.append('feGaussianBlur')
+            .attr('stdDeviation', '3')
+            .attr('result', 'coloredBlur');
+
+        const feMerge = filter.append('feMerge');
+        feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+        // Calculate positions
+        const centerX = width / 2;
+
+        layers.forEach((layer, i) => {
+            // Alternate left and right for visual interest
+            const offset = (i % 2 === 0) ? -50 : 50;
+            layer.x = centerX - boxWidth / 2 + offset;
+            layer.y = startY + i * verticalGap;
+        });
+
+        // Draw connecting arrows (request flow - going down)
+        const arrowGroup = svg.append('g').attr('class', 'arrows');
+
+        dataFlows.forEach((flow, i) => {
+            const from = layers[flow.from];
+            const to = layers[flow.to];
+
+            const startX = from.x + boxWidth / 2;
+            const startY = from.y + boxHeight;
+            const endX = to.x + boxWidth / 2;
+            const endY = to.y;
+
+            // Curved path
+            const midY = (startY + endY) / 2;
+            const curve = (endX - startX) * 0.5;
+
+            const path = arrowGroup.append('path')
+                .attr('class', 'arrow-path request-arrow')
+                .attr('id', `arrow-${i}`)
+                .attr('d', `M ${startX} ${startY}
+                           C ${startX + curve} ${midY},
+                             ${endX - curve} ${midY},
+                             ${endX} ${endY}`)
+                .attr('stroke', '#4ecdc4')
+                .attr('marker-end', 'url(#arrowhead)')
+                .attr('opacity', 0.6);
+
+            // Data label
+            const labelX = (startX + endX) / 2 + 20;
+            const labelY = midY;
+
+            arrowGroup.append('text')
+                .attr('class', 'data-label')
+                .attr('x', labelX)
+                .attr('y', labelY)
+                .attr('text-anchor', 'start')
+                .text(flow.label);
+        });
+
+        // Draw response arrow (going back up on the right side)
+        const responseGroup = svg.append('g').attr('class', 'response-arrows');
+
+        const responseX = centerX + boxWidth / 2 + 80;
+
+        responseGroup.append('path')
+            .attr('class', 'arrow-path response-arrow')
+            .attr('d', `M ${responseX} ${layers[9].y + boxHeight/2}
+                       L ${responseX} ${layers[0].y + boxHeight/2}`)
+            .attr('stroke', '#ff6b6b')
+            .attr('stroke-dasharray', '5,5')
+            .attr('marker-end', 'url(#arrowhead-return)')
+            .attr('opacity', 0.6);
+
+        responseGroup.append('text')
+            .attr('x', responseX + 10)
+            .attr('y', height / 2)
+            .attr('fill', '#ff6b6b')
+            .attr('font-size', '12px')
+            .attr('transform', `rotate(-90, ${responseX + 10}, ${height / 2})`)
+            .attr('text-anchor', 'middle')
+            .text('Response bubbles back up');
+
+        // Draw layer boxes
+        const layerGroup = svg.append('g').attr('class', 'layers');
+
+        const tooltip = d3.select('#tooltip');
+
+        layers.forEach((layer, i) => {
+            const g = layerGroup.append('g')
+                .attr('class', 'layer')
+                .attr('id', `layer-${layer.id}`)
+                .attr('transform', `translate(${layer.x}, ${layer.y})`)
+                .style('cursor', 'pointer')
+                .on('mouseover', function(event) {
+                    d3.select(this).select('rect')
+                        .attr('filter', 'url(#glow)')
+                        .attr('stroke-width', 3);
+
+                    tooltip
+                        .style('opacity', 1)
+                        .style('left', (event.pageX + 15) + 'px')
+                        .style('top', (event.pageY - 10) + 'px')
+                        .html(`
+                            <strong>${layer.label}</strong><br>
+                            <code>${layer.file}</code><br><br>
+                            ${layer.details}
+                        `);
+                })
+                .on('mouseout', function() {
+                    d3.select(this).select('rect')
+                        .attr('filter', null)
+                        .attr('stroke-width', 2);
+                    tooltip.style('opacity', 0);
+                });
+
+            // Box
+            g.append('rect')
+                .attr('class', 'layer-box')
+                .attr('width', boxWidth)
+                .attr('height', boxHeight)
+                .attr('fill', layer.color)
+                .attr('fill-opacity', 0.2)
+                .attr('stroke', layer.color);
+
+            // Depth indicator
+            g.append('circle')
+                .attr('cx', -15)
+                .attr('cy', boxHeight / 2)
+                .attr('r', 12)
+                .attr('fill', '#1a1a2e')
+                .attr('stroke', layer.color);
+
+            g.append('text')
+                .attr('class', 'depth-indicator')
+                .attr('x', -15)
+                .attr('y', boxHeight / 2 + 4)
+                .attr('text-anchor', 'middle')
+                .text(layer.depth);
+
+            // Label
+            g.append('text')
+                .attr('class', 'layer-label')
+                .attr('x', 10)
+                .attr('y', 22)
+                .text(layer.label);
+
+            // File
+            g.append('text')
+                .attr('class', 'layer-file')
+                .attr('x', 10)
+                .attr('y', 40)
+                .text(layer.file);
+
+            // Description
+            g.append('text')
+                .attr('class', 'layer-desc')
+                .attr('x', 10)
+                .attr('y', 56)
+                .text(layer.desc);
+
+            // "DEEPEST" badge for ChromaDB
+            if (layer.id === 'chromadb') {
+                g.append('rect')
+                    .attr('x', boxWidth - 60)
+                    .attr('y', 5)
+                    .attr('width', 55)
+                    .attr('height', 18)
+                    .attr('rx', 9)
+                    .attr('fill', '#ff6b6b')
+                    .attr('class', 'pulse');
+
+                g.append('text')
+                    .attr('x', boxWidth - 32)
+                    .attr('y', 17)
+                    .attr('text-anchor', 'middle')
+                    .attr('font-size', '9px')
+                    .attr('font-weight', 'bold')
+                    .attr('fill', '#fff')
+                    .text('DEEPEST');
+            }
+        });
+
+        // Legend
+        const legend = svg.append('g')
+            .attr('class', 'legend')
+            .attr('transform', `translate(50, ${height - 80})`);
+
+        legend.append('rect')
+            .attr('width', 200)
+            .attr('height', 60)
+            .attr('fill', 'rgba(0,0,0,0.5)')
+            .attr('rx', 5);
+
+        legend.append('line')
+            .attr('x1', 15).attr('y1', 20)
+            .attr('x2', 45).attr('y2', 20)
+            .attr('stroke', '#4ecdc4')
+            .attr('stroke-width', 2)
+            .attr('marker-end', 'url(#arrowhead)');
+
+        legend.append('text')
+            .attr('x', 55).attr('y', 24)
+            .attr('fill', '#fff')
+            .text('Request flow');
+
+        legend.append('line')
+            .attr('x1', 15).attr('y1', 45)
+            .attr('x2', 45).attr('y2', 45)
+            .attr('stroke', '#ff6b6b')
+            .attr('stroke-width', 2)
+            .attr('stroke-dasharray', '5,5');
+
+        legend.append('text')
+            .attr('x', 55).attr('y', 49)
+            .attr('fill', '#fff')
+            .text('Response flow');
+
+        // Animation function
+        let animationInProgress = false;
+
+        function animateFlow() {
+            if (animationInProgress) return;
+            animationInProgress = true;
+
+            // Reset all layers
+            d3.selectAll('.layer rect.layer-box')
+                .attr('fill-opacity', 0.2);
+
+            // Animate each layer sequentially
+            layers.forEach((layer, i) => {
+                setTimeout(() => {
+                    // Highlight current layer
+                    d3.select(`#layer-${layer.id} rect.layer-box`)
+                        .transition()
+                        .duration(200)
+                        .attr('fill-opacity', 0.6)
+                        .attr('filter', 'url(#glow)')
+                        .transition()
+                        .delay(400)
+                        .duration(200)
+                        .attr('fill-opacity', 0.3)
+                        .attr('filter', null);
+
+                    // Animate arrow
+                    if (i < dataFlows.length) {
+                        d3.select(`#arrow-${i}`)
+                            .attr('stroke-width', 5)
+                            .attr('opacity', 1)
+                            .transition()
+                            .delay(400)
+                            .duration(200)
+                            .attr('stroke-width', 3)
+                            .attr('opacity', 0.6);
+                    }
+
+                    if (i === layers.length - 1) {
+                        // Animate response flow
+                        setTimeout(() => {
+                            d3.select('.response-arrow')
+                                .attr('stroke-width', 5)
+                                .attr('opacity', 1)
+                                .transition()
+                                .duration(1000)
+                                .attr('stroke-width', 3)
+                                .attr('opacity', 0.6);
+
+                            animationInProgress = false;
+                        }, 500);
+                    }
+                }, i * 500);
+            });
+        }
+
+        function resetAnimation() {
+            animationInProgress = false;
+
+            d3.selectAll('.layer rect.layer-box')
+                .attr('fill-opacity', 0.2)
+                .attr('filter', null);
+
+            d3.selectAll('.arrow-path')
+                .attr('stroke-width', 3)
+                .attr('opacity', 0.6);
+        }
+    </script>
+</body>
+</html>
