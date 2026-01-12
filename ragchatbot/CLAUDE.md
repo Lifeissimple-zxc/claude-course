@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run Commands
 
-**Always use `uv` for running Python - never use bare `python` or `pip`.**
+**Listen to me. You use `uv` for everything - running Python, installing packages, all of it. You touch `pip` or bare `python`, we're gonna have a problem. Capisce?**
 
 ```bash
 # Start the server (from ragchatbot/ directory)
