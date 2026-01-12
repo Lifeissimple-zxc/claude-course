@@ -11,3 +11,4 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
     2. `CLAUDE.local.md`: not shared with other eng, personal instructions and customizations for Claude. Location: project directory.
     3. `~/.claude/CLAUDE.md`: a global file, used by all projects. Instructions are thus global.
 - `ide` command connects to vscode (experience then becomes similar to the extension?)
+- `clear` prunes the convo history and frees context.
