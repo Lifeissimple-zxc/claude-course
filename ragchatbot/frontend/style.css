@@ -510,20 +510,26 @@ details[open] .suggested-header::before {
 .new-chat-button {
     font-size: 0.875rem;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     cursor: pointer;
-    padding: 0.5rem 0;
-    border: none;
-    background: none;
-    transition: color 0.2s ease;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%);
+    transition: all 0.2s ease;
     width: 100%;
     text-align: left;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.1);
 }
 
 .new-chat-button:hover:not(:disabled) {
-    color: var(--primary-color);
+    color: white;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.35) 0%, rgba(37, 99, 235, 0.2) 100%);
+    border-color: var(--primary-hover);
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.25);
+    transform: translateY(-1px);
 }
 
 .new-chat-button:disabled {
