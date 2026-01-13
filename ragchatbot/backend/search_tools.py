@@ -116,6 +116,71 @@ class CourseSearchTool(Tool):
         
         return "\n\n".join(formatted)
 
+class CourseOutlineTool(Tool):
+    """Tool for retrieving course outline including all lessons"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+        self.last_sources = []
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        return {
+            "name": "get_course_outline",
+            "description": "Get the complete outline of a course including title, link, and all lessons with their numbers, titles, and links. Use this when users ask about course structure, available lessons, or what topics a course covers.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "course_name": {
+                        "type": "string",
+                        "description": "Course title (partial matches work, e.g. 'MCP', 'Introduction')"
+                    }
+                },
+                "required": ["course_name"]
+            }
+        }
+
+    def execute(self, course_name: str) -> str:
+        import json
+
+        # Step 1: Resolve course name using fuzzy matching
+        resolved_title = self.store._resolve_course_name(course_name)
+        if not resolved_title:
+            return f"No course found matching '{course_name}'"
+
+        # Step 2: Get course metadata by ID
+        try:
+            results = self.store.course_catalog.get(ids=[resolved_title])
+            if not results or not results['metadatas'] or not results['metadatas'][0]:
+                return f"Could not retrieve metadata for course '{resolved_title}'"
+            metadata = results['metadatas'][0]
+        except Exception as e:
+            return f"Error retrieving course: {str(e)}"
+
+        # Step 3: Parse lessons and format output
+        title = metadata.get('title', 'Unknown')
+        course_link = metadata.get('course_link', '')
+        lessons = json.loads(metadata.get('lessons_json', '[]'))
+
+        # Track source for frontend
+        self.last_sources = [{"title": title, "link": course_link}]
+
+        # Format output
+        lines = [
+            f"Course: {title}",
+            f"Course Link: {course_link}",
+            f"Total Lessons: {len(lessons)}",
+            "",
+            "Lessons:"
+        ]
+        for lesson in lessons:
+            num = lesson.get('lesson_number', '?')
+            lesson_title = lesson.get('lesson_title', 'Untitled')
+            lesson_link = lesson.get('lesson_link', '')
+            lines.append(f"  {num}. {lesson_title} - {lesson_link}")
+
+        return "\n".join(lines)
+
+
 class ToolManager:
     """Manages available tools for the AI"""
     
