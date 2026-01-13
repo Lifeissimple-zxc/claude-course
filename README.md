@@ -12,3 +12,6 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
     3. `~/.claude/CLAUDE.md`: a global file, used by all projects. Instructions are thus global.
 - `ide` command connects to vscode (experience then becomes similar to the extension?)
 - `clear` prunes the convo history and frees context.
+- the right context can make or break working with Claude.
+    - files are mentioned with `@a`.
+    - `shift + tab` to enter plan mode (works in both CLI and terminal)
