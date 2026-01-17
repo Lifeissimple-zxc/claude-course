@@ -15,6 +15,208 @@ sys.path.insert(0, str(backend_path))
 from vector_store import SearchResults
 
 
+# ===== API Test Fixtures =====
+
+@pytest.fixture
+def mock_rag_system():
+    """Mock RAGSystem for API testing."""
+    mock = Mock()
+    mock.query.return_value = (
+        "This is a test answer about Python programming.",
+        [{"title": "Python Course - Lesson 1", "link": "https://example.com/python/1"}]
+    )
+    mock.get_course_analytics.return_value = {
+        "total_courses": 3,
+        "course_titles": ["Python Basics", "Advanced Python", "Data Science"]
+    }
+    mock.session_manager = Mock()
+    mock.session_manager.create_session.return_value = "test-session-123"
+    mock.session_manager.clear_session.return_value = None
+    return mock
+
+
+@pytest.fixture
+def mock_rag_system_empty():
+    """Mock RAGSystem that returns empty results."""
+    mock = Mock()
+    mock.query.return_value = ("No information found.", [])
+    mock.get_course_analytics.return_value = {
+        "total_courses": 0,
+        "course_titles": []
+    }
+    mock.session_manager = Mock()
+    mock.session_manager.create_session.return_value = "empty-session-456"
+    return mock
+
+
+@pytest.fixture
+def mock_rag_system_error():
+    """Mock RAGSystem that raises exceptions."""
+    mock = Mock()
+    mock.query.side_effect = Exception("RAG system error: database unavailable")
+    mock.get_course_analytics.side_effect = Exception("Analytics error")
+    mock.session_manager = Mock()
+    mock.session_manager.clear_session.side_effect = Exception("Session not found")
+    return mock
+
+
+@pytest.fixture
+def test_app(mock_rag_system):
+    """
+    Create a test FastAPI app without static file mounting.
+
+    This avoids the issue of static files not existing in the test environment
+    by creating the API endpoints inline without importing from app.py.
+    """
+    from fastapi import FastAPI, HTTPException
+    from pydantic import BaseModel
+    from typing import List, Optional
+
+    app = FastAPI(title="Test Course Materials RAG System")
+
+    # Pydantic models matching app.py
+    class QueryRequest(BaseModel):
+        query: str
+        session_id: Optional[str] = None
+
+    class Source(BaseModel):
+        title: str
+        link: Optional[str] = None
+
+    class QueryResponse(BaseModel):
+        answer: str
+        sources: List[Source]
+        session_id: str
+
+    class CourseStats(BaseModel):
+        total_courses: int
+        course_titles: List[str]
+
+    # Use the mock_rag_system fixture
+    rag_system = mock_rag_system
+
+    @app.post("/api/query", response_model=QueryResponse)
+    async def query_documents(request: QueryRequest):
+        try:
+            session_id = request.session_id
+            if not session_id:
+                session_id = rag_system.session_manager.create_session()
+
+            answer, sources = rag_system.query(request.query, session_id)
+
+            return QueryResponse(
+                answer=answer,
+                sources=sources,
+                session_id=session_id
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/courses", response_model=CourseStats)
+    async def get_course_stats():
+        try:
+            analytics = rag_system.get_course_analytics()
+            return CourseStats(
+                total_courses=analytics["total_courses"],
+                course_titles=analytics["course_titles"]
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.delete("/api/session/{session_id}")
+    async def clear_session(session_id: str):
+        try:
+            rag_system.session_manager.clear_session(session_id)
+            return {"status": "cleared", "session_id": session_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/")
+    async def root():
+        return {"status": "ok", "message": "RAG API is running"}
+
+    return app
+
+
+@pytest.fixture
+def test_app_error(mock_rag_system_error):
+    """Test app configured with error-throwing RAG system."""
+    from fastapi import FastAPI, HTTPException
+    from pydantic import BaseModel
+    from typing import List, Optional
+
+    app = FastAPI(title="Test Course Materials RAG System - Error Mode")
+
+    class QueryRequest(BaseModel):
+        query: str
+        session_id: Optional[str] = None
+
+    class Source(BaseModel):
+        title: str
+        link: Optional[str] = None
+
+    class QueryResponse(BaseModel):
+        answer: str
+        sources: List[Source]
+        session_id: str
+
+    class CourseStats(BaseModel):
+        total_courses: int
+        course_titles: List[str]
+
+    rag_system = mock_rag_system_error
+
+    @app.post("/api/query", response_model=QueryResponse)
+    async def query_documents(request: QueryRequest):
+        try:
+            session_id = request.session_id or "default"
+            answer, sources = rag_system.query(request.query, session_id)
+            return QueryResponse(answer=answer, sources=sources, session_id=session_id)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/api/courses", response_model=CourseStats)
+    async def get_course_stats():
+        try:
+            analytics = rag_system.get_course_analytics()
+            return CourseStats(
+                total_courses=analytics["total_courses"],
+                course_titles=analytics["course_titles"]
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.delete("/api/session/{session_id}")
+    async def clear_session(session_id: str):
+        try:
+            rag_system.session_manager.clear_session(session_id)
+            return {"status": "cleared", "session_id": session_id}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return app
+
+
+@pytest.fixture
+async def async_client(test_app):
+    """Async HTTP client for testing FastAPI endpoints."""
+    from httpx import AsyncClient, ASGITransport
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
+@pytest.fixture
+async def async_client_error(test_app_error):
+    """Async HTTP client configured with error-throwing RAG system."""
+    from httpx import AsyncClient, ASGITransport
+
+    transport = ASGITransport(app=test_app_error)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
 # ===== Sample Data Fixtures =====
 
 @pytest.fixture
