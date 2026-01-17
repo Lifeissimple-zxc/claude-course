@@ -16,3 +16,4 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
     - files are mentioned with `@a`.
     - `shift + tab` to enter plan mode (works in both CLI and terminal).
 - Claude supports screenshots. They can be added to context by copy pasting them to the terminal. Vs code extension does not support the shortcut.
+- `claude mcp add` adds an MCP server.
