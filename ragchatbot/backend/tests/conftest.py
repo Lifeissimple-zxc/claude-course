@@ -223,6 +223,40 @@ def mock_tool_manager_exception():
     return mock
 
 
+# ===== Sequential Tool Calling Fixtures =====
+
+@pytest.fixture
+def mock_anthropic_response_tool_use_outline():
+    """Mock Claude response requesting get_course_outline tool (for second round)."""
+    response = Mock()
+    response.stop_reason = "tool_use"
+
+    tool_block = Mock()
+    tool_block.type = "tool_use"
+    tool_block.name = "get_course_outline"
+    tool_block.id = "tool_call_456"
+    tool_block.input = {"course_name": "Introduction to Python"}
+
+    response.content = [tool_block]
+    return response
+
+
+@pytest.fixture
+def mock_tool_manager_sequential():
+    """Mock ToolManager that returns different results for sequential calls."""
+    mock = Mock()
+    mock.execute_tool.side_effect = [
+        "[Search Result] Python basics content about variables...",
+        "[Outline Result] Course: Intro to Python\nLessons: 1. Basics, 2. Functions"
+    ]
+    mock.get_tool_definitions.return_value = [
+        {"name": "search_course_content", "description": "Search course materials"},
+        {"name": "get_course_outline", "description": "Get course structure"}
+    ]
+    mock.get_last_sources.return_value = []
+    return mock
+
+
 # ===== Helper Functions =====
 
 def create_mock_tool_use_response(tool_name: str, tool_input: dict, tool_id: str = "tool_123"):

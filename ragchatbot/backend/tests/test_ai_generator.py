@@ -360,3 +360,223 @@ class TestAIGeneratorAPIParameters:
         assert call_kwargs["model"] == "claude-3-sonnet"
         assert call_kwargs["temperature"] == 0
         assert call_kwargs["max_tokens"] == 800
+
+
+class TestAIGeneratorSequentialToolCalling:
+    """Tests for sequential tool calling (up to 2 rounds)."""
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_two_sequential_tool_calls_success(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_tool_use_outline,
+        mock_anthropic_response_final,
+        mock_tool_manager_sequential
+    ):
+        """Test Claude can make two sequential tool calls."""
+        mock_client = Mock()
+        mock_client.messages.create.side_effect = [
+            mock_anthropic_response_tool_use,         # Round 1: search
+            mock_anthropic_response_tool_use_outline, # Round 2: outline
+            mock_anthropic_response_final             # Final text response
+        ]
+        mock_anthropic_class.return_value = mock_client
+
+        tools = [{"name": "search_course_content"}, {"name": "get_course_outline"}]
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        result = generator.generate_response(
+            "Compare Python basics with the course outline",
+            tools=tools,
+            tool_manager=mock_tool_manager_sequential
+        )
+
+        # Verify 3 API calls made
+        assert mock_client.messages.create.call_count == 3
+
+        # Verify both tools executed
+        assert mock_tool_manager_sequential.execute_tool.call_count == 2
+
+        # Verify final response returned
+        assert "Based on the course content" in result
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_terminates_after_max_rounds(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_final,
+        mock_tool_manager
+    ):
+        """Test loop terminates after max_tool_rounds even if Claude wants more tools."""
+        mock_client = Mock()
+        # Claude keeps requesting tools, but we force-stop after 2 rounds
+        mock_client.messages.create.side_effect = [
+            mock_anthropic_response_tool_use,  # Round 1
+            mock_anthropic_response_tool_use,  # Round 2
+            mock_anthropic_response_final      # Final (forced, no tools)
+        ]
+        mock_anthropic_class.return_value = mock_client
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        result = generator.generate_response(
+            "Query",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=mock_tool_manager
+        )
+
+        # Verify exactly 3 API calls (2 tool rounds + 1 final)
+        assert mock_client.messages.create.call_count == 3
+
+        # Verify last call has NO tools parameter (forces text response)
+        final_call = mock_client.messages.create.call_args_list[2]
+        final_kwargs = final_call[1]
+        assert "tools" not in final_kwargs
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_early_termination_on_text_response(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_final,
+        mock_tool_manager
+    ):
+        """Test loop ends early when Claude returns text (no more tool calls needed)."""
+        mock_client = Mock()
+        # Claude uses one tool then returns text
+        mock_client.messages.create.side_effect = [
+            mock_anthropic_response_tool_use,
+            mock_anthropic_response_final  # Text response, not tool_use
+        ]
+        mock_anthropic_class.return_value = mock_client
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        result = generator.generate_response(
+            "Query",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=mock_tool_manager
+        )
+
+        # Verify only 2 API calls (1 tool round + early exit)
+        assert mock_client.messages.create.call_count == 2
+
+        # Verify only 1 tool execution
+        assert mock_tool_manager.execute_tool.call_count == 1
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_message_accumulation_across_rounds(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_tool_use_outline,
+        mock_anthropic_response_final,
+        mock_tool_manager_sequential
+    ):
+        """Test messages accumulate correctly across tool rounds."""
+        mock_client = Mock()
+        captured_messages = []
+
+        def capture_messages(**kwargs):
+            # Capture a copy of messages at call time
+            captured_messages.append([m.copy() if isinstance(m, dict) else m for m in kwargs["messages"]])
+            responses = [
+                mock_anthropic_response_tool_use,
+                mock_anthropic_response_tool_use_outline,
+                mock_anthropic_response_final
+            ]
+            return responses[len(captured_messages) - 1]
+
+        mock_client.messages.create.side_effect = capture_messages
+        mock_anthropic_class.return_value = mock_client
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        generator.generate_response(
+            "Original query",
+            tools=[{"name": "search_course_content"}, {"name": "get_course_outline"}],
+            tool_manager=mock_tool_manager_sequential
+        )
+
+        # Verify 3 API calls made
+        assert len(captured_messages) == 3
+
+        # First call: just the user query
+        assert len(captured_messages[0]) == 1
+        assert captured_messages[0][0]["role"] == "user"
+
+        # Second call: user + assistant(tool_use) + user(tool_result)
+        assert len(captured_messages[1]) == 3
+        assert captured_messages[1][0]["role"] == "user"
+        assert captured_messages[1][1]["role"] == "assistant"
+        assert captured_messages[1][2]["role"] == "user"
+
+        # Third call: 5 messages after 2 tool rounds
+        assert len(captured_messages[2]) == 5
+        assert captured_messages[2][0]["role"] == "user"
+        assert captured_messages[2][1]["role"] == "assistant"
+        assert captured_messages[2][2]["role"] == "user"
+        assert captured_messages[2][3]["role"] == "assistant"
+        assert captured_messages[2][4]["role"] == "user"
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_tool_failure_continues_flow(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_final,
+        mock_tool_manager_exception
+    ):
+        """Test that tool failure doesn't break the chain - error passed to Claude."""
+        mock_client = Mock()
+        mock_client.messages.create.side_effect = [
+            mock_anthropic_response_tool_use,
+            mock_anthropic_response_final
+        ]
+        mock_anthropic_class.return_value = mock_client
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        result = generator.generate_response(
+            "Query",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=mock_tool_manager_exception
+        )
+
+        # Should still return final response
+        assert result is not None
+
+        # Verify error message was sent as tool result
+        second_call = mock_client.messages.create.call_args_list[1]
+        messages = second_call[1]["messages"]
+        tool_result_content = messages[2]["content"][0]["content"]
+        assert "Error executing tool" in tool_result_content
+
+    @patch('ai_generator.anthropic.Anthropic')
+    def test_custom_max_rounds(
+        self,
+        mock_anthropic_class,
+        mock_anthropic_response_tool_use,
+        mock_anthropic_response_final,
+        mock_tool_manager
+    ):
+        """Test max_tool_rounds parameter can be customized."""
+        mock_client = Mock()
+        mock_client.messages.create.side_effect = [
+            mock_anthropic_response_tool_use,  # Round 1
+            mock_anthropic_response_final      # Final (forced after 1 round)
+        ]
+        mock_anthropic_class.return_value = mock_client
+
+        generator = AIGenerator(api_key="test_key", model="claude-3-sonnet")
+        result = generator.generate_response(
+            "Query",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=mock_tool_manager,
+            max_tool_rounds=1  # Only allow 1 round
+        )
+
+        # Verify exactly 2 API calls (1 tool round + 1 final)
+        assert mock_client.messages.create.call_count == 2
+
+        # Verify final call has no tools
+        final_call = mock_client.messages.create.call_args_list[1]
+        assert "tools" not in final_call[1]

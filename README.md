@@ -17,3 +17,6 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
     - `shift + tab` to enter plan mode (works in both CLI and terminal).
 - Claude supports screenshots. They can be added to context by copy pasting them to the terminal. Vs code extension does not support the shortcut.
 - `claude mcp add` adds an MCP server.
+- Plan mode is a read-only mode where Claude reads and "understands" things.
+- `Think a lot` is a special instruction that makes Claude spend more tokens and evaluate the problem statement deeper (tbd if it indeed works).
+- Spawning subagents is smart to get multiple approaches to solving a problem evaluated.
