@@ -20,3 +20,5 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
 - Plan mode is a read-only mode where Claude reads and "understands" things.
 - `Think a lot` is a special instruction that makes Claude spend more tokens and evaluate the problem statement deeper (tbd if it indeed works).
 - Spawning subagents is smart to get multiple approaches to solving a problem evaluated.
+- Multiple Claude sessions can be started simultaneously. This requires git worktrees.
+- Custom commands for claude can be added to the `.claude/commands` dir.
