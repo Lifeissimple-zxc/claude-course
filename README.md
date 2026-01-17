@@ -21,4 +21,9 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
 - `Think a lot` is a special instruction that makes Claude spend more tokens and evaluate the problem statement deeper (tbd if it indeed works).
 - Spawning subagents is smart to get multiple approaches to solving a problem evaluated.
 - Multiple Claude sessions can be started simultaneously. This requires git worktrees.
-- Custom commands for claude can be added to the `.claude/commands` dir.
+- Custom commands for claude can be added to the `.claude/commands` dir. Permissions are also stored in `.claude`.
+
+### Worktrees.
+A worktree is a repo copy living on disk in a dedicated folder. We can have multiple worktrees for a single repo. This allows agents to edit files without conflicts in parallel. How do create:
+- create a `.worktrees` folder in.
+- run `git worktree add .worktrees/my_feature` to create worktree entitues in git.
