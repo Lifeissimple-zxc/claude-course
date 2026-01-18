@@ -2,7 +2,7 @@
 
 This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/courses/claude-code-a-highly-agentic-coding-assistant).
 
-## Notes and Learnings
+## Notes and Learnings (DeepLearning Course)
 - `claude.md` is a file with instructions loaded into the model's context automatically.
 - Claude does not index the code, it uses tools to navigate it and the model to reason.
 - `uv run` both installs deps and runs the application.
@@ -22,12 +22,21 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
 - Spawning subagents is smart to get multiple approaches to solving a problem evaluated.
 - Multiple Claude sessions can be started simultaneously. This requires git worktrees.
 - Custom commands for claude can be added to the `.claude/commands` dir. Permissions are also stored in `.claude`.
+- `claude --resume` can be used to continue with a prev. convo.
+- Claude hooks provide a way to inject arbitrary logic into the Claude's workflow.
+- Initial data analysis performed by claude can be a good idea.
+- Exitting a conversation does not erase it's progress. Keep that in mind for cases where last-minute changes are required.
 
 ### Worktrees.
 A worktree is a repo copy living on disk in a dedicated folder. We can have multiple worktrees for a single repo. This allows agents to edit files without conflicts in parallel. How do create:
 - create a `.worktrees` folder in.
 - run `git worktree add .worktrees/my_feature` to create worktree entitues in git.
-- `claude --resume` can be used to continue with a prev. convo.
-- Claude hooks provide a way to inject arbitrary logic into the Claude's workflow.
-- Initial data analysis performed by claude can be a good idea.
-- Exitting a conversation does not erase it's progress. Keep that in mind for cases where last-minute changes are required.
+
+
+## Notes and Learnings (Anthropic)
+- First start of claude in a project should be the `init` command. What it does:
+    - scans the codebase.
+    - creates a summary.
+    - writes the summary to the CLAUDE.md file.
+    - The file is then included in every request.
+- `CLAUDE.md` contents are included into EVERY REQUEST sent to Claude.
