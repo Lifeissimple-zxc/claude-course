@@ -28,3 +28,4 @@ A worktree is a repo copy living on disk in a dedicated folder. We can have mult
 - create a `.worktrees` folder in.
 - run `git worktree add .worktrees/my_feature` to create worktree entitues in git.
 - `claude --resume` can be used to continue with a prev. convo.
+- Claude hooks provide a way to inject arbitrary logic into the Claude's workflow.
