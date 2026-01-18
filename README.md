@@ -27,3 +27,4 @@ This repo follows a course on Claude Code: [link](https://learn.deeplearning.ai/
 A worktree is a repo copy living on disk in a dedicated folder. We can have multiple worktrees for a single repo. This allows agents to edit files without conflicts in parallel. How do create:
 - create a `.worktrees` folder in.
 - run `git worktree add .worktrees/my_feature` to create worktree entitues in git.
+- `claude --resume` can be used to continue with a prev. convo.
