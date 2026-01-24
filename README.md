@@ -40,3 +40,58 @@ A worktree is a repo copy living on disk in a dedicated folder. We can have mult
     - writes the summary to the CLAUDE.md file.
     - The file is then included in every request.
 - `CLAUDE.md` contents are included into EVERY REQUEST sent to Claude.
+- When in chat mode, `#` adds a claude memory. This is useful when Claude makes the same mistake over and over again.
+- Double `ESC` allows to enter the rewind mode and revisit the messages sent to Claude.
+- `claude mcp add playwright npx @playwright/mcp@latest` installs playwright to enable claude to control browser.
+
+### Hooks
+- A hook is a custom piece of logic that can be injected into the Claude's workflow. The biggest examples are `PreToolUse` and `PostToolUse`.
+- Hook locations
+    - Global: `~/.claude/settings.json`.
+    - Project: `.claude/settings.json`. (can be pushed to git)
+    - Project (not committed): `.claude/settings.local.json`.
+- `PreToolUse` can block tool usage. It's useful for preventing Claude from reading specific files (ie .env files).
+- Hooks communicate with Claude using exit codes. Code `0` means that everything is good. `2` blocks the tool and sends feedback to Claude (stderror).
+Config for a command preventing claude from reading stuff from .env.
+```json
+{
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Read|Grep",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "node myscript.js" // this script needs to parse the command claude is trying to execute
+                    }
+                ]
+            }
+        ]
+    }
+    // .....
+}
+```
+myscript.js:
+```js
+async function main() {
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  
+  const toolArgs = JSON.parse(Buffer.concat(chunks).toString());
+  
+  // Extract the file path Claude is trying to read
+  const readPath = 
+    toolArgs.tool_input?.file_path || toolArgs.tool_input?.path || "";
+  
+  // Check if Claude is trying to read the .env file
+  if (readPath.includes('.env')) {
+    console.error("You cannot read the .env file");
+    process.exit(2); // this is how we block Claude from proceeding with the command!
+  }
+}
+
+main()
+```
+
